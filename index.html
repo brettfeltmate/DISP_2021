@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script
+            src="https://code.jquery.com/jquery-3.4.1.min.js"
+            integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+            crossorigin="anonymous">
+    </script>
+    <script src = 'js/jspsych.js'></script>
+    <script src = 'js/plugins/spatial-search-trial.js'></script>
+    <script src = 'js/plugins/temporal-search-trial.js'></script>
+    <script src = 'js/util/colourspaces.js'></script>
+    <script src = 'js/util/utilities.js'></script>
+    <link rel="stylesheet" href="css/project.css">
+    <link rel="stylesheet" href="css/jspsych.css">
+</head>
+<body>
+<script>
+
+
+    let set_sizes = [8, 12, 16]
+    let target_fill_index = ranged_random(0, 359)
+    let target_present = [true, false]
+    let TD_conds = ['HIGH', 'LOW']
+    let DD_conds = ['HIGH', 'LOW']
+
+    trial_timeline = []
+
+    for (let i=0; i<set_sizes.length; i++) {
+    	for (let j=0; j<target_present.length; j++) {
+    		for (let k=0; k<TD_conds.length; k++) {
+    			for (let l=0; l<DD_conds.length; l++) {
+    				trial_timeline.push(
+                        {
+                            type: 'temporal-search',
+                            choices: ['j', 'f'],
+                            target_fill_index: target_fill_index,
+                            //set_size: set_sizes[i],
+                            target_present: target_present[j],
+                            TD_cond: TD_conds[k],
+                            DD_cond: DD_conds[l]
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+
+    jsPsych.init({
+	    show_progress_bar: false,
+        timeline: jsPsych.randomization.sampleWithoutReplacement(trial_timeline, 10),
+        default_iti: 3000,
+        on_finish: function() { jsPsych.data.displayData(); }
+
+        }
+    )
+
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+$grue: rgb(45,45,48);
+$whiteish: rgb(200,200,200);
+$one_dva: 100px;
+$border_width: 0.05 * $one_dva;
+
+body {
+  background-color: $grue;
+  color: $whiteish;
+}
+
+.spatial_array {
+  display: grid;
+  place-items: center;
+  grid-template-columns: repeat(5, $one_dva);
+  grid-template-rows: repeat(5, $one_dva);
+  grid-template-areas:
+    "a b c d e"
+    "f g h i j"
+    "k l fixation m n"
+    "o p q w s"
+    "t u v w x";
+}
+
+.search-item {
+  border-radius: 99%;
+  width: 0.7 * $one_dva;
+  height: 0.7 * $one_dva;
+  background-color: white;
+  opacity: 1;
+
+  .filler {
+    opacity: 0;
+    border: none;
+  }
+}
+
+
+.fixation {
+  border-radius: 99%;
+  grid-area: fixation;
+  width: 0.7 * $one_dva;
+  height: 0.7 * $one_dva;
+  opacity: 1;
+  background-color: white;
+}
