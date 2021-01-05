@@ -319,6 +319,8 @@ jsPsych.plugins["spatial-search"] = (function() {
     };
 
     var give_feedback = function(trial_data) {
+      data_repo.push(trial_data)
+
       switch (trial_data.accuracy) {
         case "TIMEOUT":
           $(display_element).append('<p>TIMEOUT</p>')

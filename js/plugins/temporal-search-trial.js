@@ -62,7 +62,7 @@ jsPsych.plugins["temporal-search"] = (function() {
       fix_duration: {
         type: jsPsych.plugins.parameterType.INT,
         pretty_name: 'Fixation duration',
-        default: 1000,
+        default: 3000,
         description: 'How long to present fixation before onset of first masking array.'
       },
       mask_duration: {
@@ -161,40 +161,15 @@ jsPsych.plugins["temporal-search"] = (function() {
       ISI: trial.ISI_duration,
       rt: null,
       response: null,
-      accuracy: null,
+      accuracy: null
     }
+
+    var stim_fills = plugin.get_fills()
 
     // Given it's easier to use search-item here, instead of fixation, is fixation really necessary to define?
     var search_item = $('<div />').addClass('search-item')
 
     $(display_element).append(search_item)
-
-    var stim_fills = plugin.get_fills()
-
-    function timer(ms) {return new Promise(res => jsPsych.pluginAPI.setTimeout(res, ms))}
-
-    async function fix_period () {
-      await timer(trial_data.fix_dur)
-    }
-
-    async function run_rsvp () {
-      for (let i=0; i < stim_fills.length; i++) {
-        start = performance.now()
-
-        // TODO: ask Jon why this doesn't work here...
-        // $(search_item).css( 'background-color', `${stim_fills[i]}` )
-
-        let delay = (i % 2 === 0) ? trial_data.search_dur : trial_data.mask_dur
-        await timer(delay)
-        $(search_item).css( 'background-color', `${stim_fills[i]}` )
-
-        console.log(`elapsed {0}`.format(performance.now()-start))
-      }
-    }
-
-    // Compute time after which trial self-aborts
-    let trial_duration = trial_data.fix_dur + (trial_data.search_dur*16) + (trial_data.mask_dur*16) + trial_data.response_window
-
 
     var keyboardListener;
 
@@ -207,22 +182,31 @@ jsPsych.plugins["temporal-search"] = (function() {
         allow_held_key: false
       })
 
+    }, trial_data.fix_dur)
+
+    var trial_duration = trial_data.fix_dur + (trial_data.search_dur*16) + (trial_data.mask_dur*16) + trial.response_window;
+
+    jsPsych.pluginAPI.setTimeout(function() {
+      jsPsych.pluginAPI.cancelKeyboardResponse(keyboardListener) // Stop listening for responses
+      end_trial()
     }, trial_duration)
 
-    fix_period()
-    run_rsvp()
+    function timer(ms) {return new Promise(res => jsPsych.pluginAPI.setTimeout(res, ms))}
 
+    async function do_trial () {
+      await timer(trial_data.fix_dur)
+      run_rsvp()
+    }
 
+    async function run_rsvp () {
+      for (let i=0; i < stim_fills.length; i++) {
+        let delay = (i % 2 === 0) ? trial_data.search_dur : trial_data.mask_dur
+        await timer(delay)
+        $(search_item).css( 'background-color', `${stim_fills[i]}` )
+      }
+    }
 
-
-
-
-
-
-
-
-
-
+    do_trial()
 
     // store response
     var response = {
@@ -233,7 +217,7 @@ jsPsych.plugins["temporal-search"] = (function() {
 
     // function to end trial when it is time
     var end_trial = function() {
-
+      $(display_element).html('')
       // kill any remaining setTimeout handlers
       jsPsych.pluginAPI.clearAllTimeouts();
 
@@ -242,38 +226,59 @@ jsPsych.plugins["temporal-search"] = (function() {
         jsPsych.pluginAPI.cancelKeyboardResponse(keyboardListener);
       }
 
+      // Determine response accuracy (if not timeout)
+      if (response.key == null) {
+        response.rt = 'TIMEOUT';
+        response.key = 'TIMEOUT';
+        response.acc = 'TIMEOUT'
+      }
+      else if (jsPsych.pluginAPI.compareKeys(response.key, trial.choices[0])) {
+        response.key = 'PRESENT'
+      }
+      else {
+        response.key = 'ABSENT'
+      }
+
+      if (response.key != 'TIMEOUT') {
+        response.acc = (response.key == trial.target_present) ? 1 : 0
+      }
+
       // gather the data to store for the trial
-      var trial_data = {
-        "rt": response.rt,
-        "stimulus": trial.stimulus,
-        "key_press": response.key
-      };
+      trial_data.rt = response.rt
+      trial_data.response = response.key
+      trial_data.accuracy = response.acc
 
-      // clear the display
-      display_element.innerHTML = '';
-
-      // move on to the next trial
-      jsPsych.finishTrial(trial_data);
+      // provide feedback on trial performance
+      give_feedback(trial_data)
     };
 
     // function to handle responses by the subject
     var after_response = function(info) {
-
-      // after a valid response, the stimulus will have the CSS class 'responded'
-      // which can be used to provide visual feedback that a response was recorded
-      //display_element.querySelector('#jspsych-html-keyboard-response-stimulus').className += ' responded';
-
       // only record the first response
-      if (response.key == null) {
-        response = info;
-      }
-
-      if (trial.response_ends_trial) {
-        end_trial();
-
+      if (response.key == null) { response = info; }
+      end_trial();
     };
 
 
+    var give_feedback = function(trial_data) {
+      data_repo.push(trial_data)
+
+      switch (trial_data.accuracy) {
+        case "TIMEOUT":
+          $(display_element).append('<p>TIMEOUT</p>')
+          break
+        case 1:
+          $(display_element).append('<p>CORRECT</p>')
+          break
+        case 0:
+          $(display_element).append('<p>INCORRECT</p>')
+      }
+
+      jsPsych.pluginAPI.setTimeout( function() {
+        $(display_element).html('')
+        jsPsych.finishTrial(trial_data)
+      }, trial.feedback_duration)
+    }
   };
 
   return plugin;
