@@ -11,8 +11,14 @@
     <script src = 'js/jspsych.js'></script>
     <script src = 'js/plugins/spatial-search-trial.js'></script>
     <script src = 'js/plugins/temporal-search-trial.js'></script>
+    <script src = 'js/plugins/jspsych-html-keyboard-response.js'></script>
+    <script src = 'js/plugins/jspsych-survey-text.js'></script>
+    <script src = 'js/plugins/jspsych-instructions.js'></script>
+    <script src = 'js/plugins/jspsych-fullscreen.js'></script>
     <script src = 'js/util/colourspaces.js'></script>
     <script src = 'js/util/utilities.js'></script>
+    <script src = 'js/get-distractor-fills.js'></script>
+    <script src = 'js/factorize.js'></script>
     <link rel="stylesheet" href="css/project.css">
     <link rel="stylesheet" href="css/jspsych.css">
 </head>
@@ -21,38 +27,220 @@
 
     var data_repo = [];
 
-    let set_sizes = [8, 12, 16]
-    let target_fill_index = ranged_random(0, 359)
-    let target_present = [true, false]
-    let TD_conds = ['HIGH', 'LOW']
-    let DD_conds = ['HIGH', 'LOW']
+    /*
+    * Construct practice & testing trials
+    * ... yes it's gross af but the things get done
+    *
+    * */
 
-    trial_timeline = []
+    // Trial variables
+    let choices = array_shuffle(['f', 'j'])
+    var response_keys = choices
 
-    for (let i=0; i<set_sizes.length; i++) {
-    	for (let j=0; j<target_present.length; j++) {
-    		for (let k=0; k<TD_conds.length; k++) {
-    			for (let l=0; l<DD_conds.length; l++) {
-    				trial_timeline.push(
-                        {
-                            type: 'temporal-search',
-                            choices: ['j', 'f'],
-                            target_fill_index: target_fill_index,
-                            //set_size: set_sizes[i],
-                            target_present: target_present[j],
-                            TD_cond: TD_conds[k],
-                            DD_cond: DD_conds[l]
-                        }
-                    )
-                }
-            }
+    var TD_Similarity = array_shuffle(['HI', 'LO'])
+    var DD_Similarity = array_shuffle(['HI', 'LO'])
+
+    var set_size = [8, 12, 16]
+    var target_present = ['PRESENT', 'ABSENT']
+
+    // Only four practice blocks are run, two for each search domain, which two
+    // stimulus conditions are assigned to each is randomized.
+    let practice_conds = array_shuffle([['HI', 'LO'], ['HI', 'HI'], ['LO', 'HI'], ['LO', 'LO']])
+
+    let spatial_practice_factorized = []
+    let temporal_practice_factorized = []
+
+    while (practice_conds.length > 0) {
+    	space_cond = practice_conds.pop()
+    	spatial_practice_factorized.push(
+    		// factorize returns full factorial of variables provided (i.e., every possible trial type that could occur)
+            factorize(true, 'spatial-search', response_keys, set_size, target_present, space_cond[0], space_cond[1])
+        )
+        time_cond = practice_conds.pop()
+	    temporal_practice_factorized.push(
+		    factorize(true, 'spatial-search', response_keys, set_size, target_present, time_cond[0], time_cond[1])
+	    )
+    }
+
+    // Testing blocks, one for each stimulus conditions for each search domain
+
+    let spatial_testing_factorized = []
+    for (let i=0; i<TD_Similarity.length; i++) {
+    	for (let j=0; j<DD_Similarity.length; j++) {
+    		spatial_testing_factorized.push(
+			    factorize(false, 'spatial-search', response_keys, set_size, target_present, TD_Similarity[i], DD_Similarity[j])
+            )
         }
     }
+
+    // shuffle stimulus conditions, otherwise spatial and temporal search would follow the same sequence.
+    TD_Similarity = array_shuffle(TD_Similarity)
+    DD_Similarity = array_shuffle(DD_Similarity)
+
+    let temporal_testing_factorized = []
+    for (let i=0; i<TD_Similarity.length; i++) {
+	    for (let j=0; j<DD_Similarity.length; j++) {
+		    temporal_testing_factorized.push(
+			    factorize(false, 'temporal-search', response_keys, set_size, target_present, TD_Similarity[i], DD_Similarity[j])
+		    )
+	    }
+    }
+
+
+    // Abstract 'trial' populated by values selected from factorials
+    var trial = {
+    	practice: jsPsych.timelineVariable('practice'),
+    	type: jsPsych.timelineVariable('type'),
+        choices: jsPsych.timelineVariable('choices'),
+        target_fill: jsPsych.timelineVariable('target_fill'),
+        set_size: jsPsych.timelineVariable('set_size'),
+        target_present: jsPsych.timelineVariable('target_present'),
+        TD_cond: jsPsych.timelineVariable('TD_cond'),
+        DD_cond: jsPsych.timelineVariable('DD_cond'),
+        distractor_fills: jsPsych.timelineVariable('distractor_fills')
+    }
+
+    // Spawns trial sequence using provided factor list and desired # of repetitions
+    let trial_sequence = function(factored_list, reps, randomize=true) {
+    	block = {
+            timeline: [trial],
+            timeline_variables: factored_list,
+            repetitions: reps,
+            randomize_order: randomize
+        }
+        return block
+    }
+
+    // Spawn and store temporal blocks
+    var temporal_blocks = []
+
+    // Randomize order of stimulus conditions
+    temporal_practice_factorized = array_shuffle(temporal_practice_factorized)
+    for (let i=0; i<temporal_practice_factorized.length; i++) {
+    	temporal_blocks.push(trial_sequence(temporal_practice_factorized[i], 3)) // 1 seq = 8 trials, results in 24 trial sequence for each practice block
+    }
+
+
+    temporal_testing_factorized = array_shuffle(temporal_testing_factorized)
+    for (let i=0; i<temporal_testing_factorized.length; i++) {
+	    temporal_blocks.push(trial_sequence(temporal_testing_factorized[i], 9)) // 72 trials per block
+    }
+
+    // spatial blocks
+    var spatial_blocks = []
+
+    spatial_practice_factorized = array_shuffle(spatial_practice_factorized)
+    for (let i=0; i<spatial_practice_factorized.length; i++) {
+	    spatial_blocks.push(trial_sequence(spatial_practice_factorized[i], 1)) // 1 seq = 24 trials per practice block
+    }
+
+
+    spatial_testing_factorized = array_shuffle(spatial_testing_factorized)
+    for (let i=0; i<spatial_testing_factorized.length; i++) {
+	    spatial_blocks.push(trial_sequence(spatial_testing_factorized[i], 3)) // 72 trials per block
+    }
+
+    /*
+    *
+    * Now, create interstitial events (welcome screen, instructions, block breaks, etc.,
+    *
+    * */
+
+    // instructions
+    let general_instrux = [
+    	'<p>In this experiment, you will see a series of items</p><br>' +
+        '<p>Amongst these items a target item may, or may not, be present</p><br>',
+        '<p>If one of the items is the target, press the {0} key, otherwise press the {1} key</p><br>'.format(response_keys[0], response_keys[1]) +
+        '<p>Please try to respond as QUICKLY and as ACCURATELY as possible. You will be told whether you were correct, or not, after each response</p>',
+        '<p>Each trial will begin with a preview of the target you are looking for, and p ractice blocks will be provided to familiarize yourself with the task.</p>'
+    ]
+
+    let spatial_instrux = [
+    	'<p>Searching in Space!</p>',
+        '<p>In this task you will see a collection of coloured items randomly arranged around the screen</p>',
+        '<p>If one of these items is the target, press the {0} key, if none are the target press the {1} key</p>'.format(response_keys[0], response_keys[[1]])
+    ]
+
+    let temporal_instrux = [
+    	'<p>Searching in Time!</p>',
+        '<p>In this task you will see a rapid series of coloured items presented one at at time, center screen.</p>',
+        '<p>If one of these items is the target, press the {0} key.<br>If, once the stream ends, none of the items was the target, press the {1} key</p>'.format(response_keys[0], response_keys[[1]])
+    ]
+
+    let general_instructions = {
+    	type: 'instructions',
+        pages: general_instrux,
+        show_clickable_nav: true
+    }
+
+    let spatial_instrucitons = {
+    	type: 'instructions',
+        pages: spatial_instrux,
+        show_clickable_nav: true
+    }
+
+    let temporal_instructions = {
+    	type: 'instructions',
+        pages: temporal_instrux,
+        show_clickable_nav: true
+    }
+
+    let break_period = {
+    	type: 'html-keyboard-response',
+        stimulus: 'Rest period. Press any key when you are ready to continue.'
+    }
+
+    let enter_fullscreen = {
+    	type: 'fullscreen',
+        fullscreen_mode: true
+    }
+
+    let exit_fullscreen = {
+    	type: 'fullscreen',
+        fullscreen_mode: false
+    }
+
+    let final_timeline = [enter_fullscreen, general_instructions]
+
+    let first_task = randomChoice(['SPATIAL', 'TEMPORAL'])
+
+    if (first_task == 'SPATIAL') {
+    	final_timeline.push(spatial_instrucitons)
+        for (let i=0; i<spatial_blocks.length; i++) {
+        	final_timeline.push(spatial_blocks[i])
+            final_timeline.push(break_period)
+        }
+        final_timeline.push(temporal_instructions)
+        for (let i=0; i<temporal_blocks.length; i++) {
+	        final_timeline.push(temporal_blocks[i])
+	        final_timeline.push(break_period)
+        }
+    }
+    else {
+	    final_timeline.push(temporal_instructions)
+	    for (let i=0; i<temporal_blocks.length; i++) {
+		    final_timeline.push(temporal_blocks[i])
+		    final_timeline.push(break_period)
+	    }
+	    final_timeline.push(spatial_instrucitons)
+	    for (let i=0; i<spatial_blocks.length; i++) {
+		    final_timeline.push(spatial_blocks[i])
+		    final_timeline.push(break_period)
+	    }
+    }
+
+    final_timeline.push(exit_fullscreen)
+
+
+
+
+
+
 
 
     jsPsych.init({
 	    show_progress_bar: false,
-        timeline: jsPsych.randomization.sampleWithoutReplacement(trial_timeline, 10),
+        timeline: final_timeline,
         default_iti: 3000,
         on_finish: function() { jsPsych.data.displayData(); }
 

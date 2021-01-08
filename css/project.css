@@ -17,6 +17,7 @@ body {
   height: 70px;
   background-color: white;
   opacity: 1;
+  line-height: 70px;
 }
 .search-item .filler {
   opacity: 0;

@@ -17,6 +17,12 @@ jsPsych.plugins["temporal-search"] = (function() {
     name: 'temporal-search',
     description: '',
     parameters: {
+      practice: {
+        type: jsPsych.plugins.parameterType.BOOL,
+        pretty_name: "Practice",
+        default: undefined,
+        description: "true if this is a practice block."
+      },
       search_type: {
         type: jsPsych.plugins.parameterType.STRING,
         pretty_name: 'Search type',
@@ -28,11 +34,18 @@ jsPsych.plugins["temporal-search"] = (function() {
         default: 16,
         description: "Number of search items contained within RSVP stream"
       },
-      target_fill_index: {
-        type: jsPsych.plugins.parameterType.INT,
-        pretty_name: 'Target fill index',
+      target_fill: {
+        type: jsPsych.plugins.parameterType.STRING,
+        pretty_name: 'Target fill',
         default: null,
-        description: "Index value which corresponds to target fill."
+        description: "RGB value, selected from colourspaces.js, which corresponds to target fill."
+      },
+      distractor_fills: {
+        type: jsPsych.plugins.parameterType.STRING,
+        pretty_name: "Distractor Fills",
+        array: true,
+        default: undefined,
+        description: "List from which distractor fills (passed to background-color) are selected from."
       },
       target_present:{
         type: jsPsych.plugins.parameterType.STRING,
@@ -59,10 +72,16 @@ jsPsych.plugins["temporal-search"] = (function() {
         default: jsPsych.ALL_KEYS,
         description: 'The keys the subject is allowed to press to respond to the stimulus.'
       },
+      preview_duration: {
+        type: jsPsych.plugins.parameterType.INT,
+        pretty_name: 'Preview duration',
+        default: 1000,
+        description: 'How long to present target preview before fixation onset'
+      },
       fix_duration: {
         type: jsPsych.plugins.parameterType.INT,
         pretty_name: 'Fixation duration',
-        default: 3000,
+        default: 1000,
         description: 'How long to present fixation before onset of first masking array.'
       },
       mask_duration: {
@@ -103,42 +122,27 @@ jsPsych.plugins["temporal-search"] = (function() {
     let fills = []
 
     if (trial_data.target_present) {
-      fills.push(const_lum[trial_data.target_fill_index])
-    }
-
-    // Compute reference index used to select distractor fills
-    let ref_color = (trial_data.TD_cond == 'HIGH') ? trial_data.target_fill_index : ((trial_data.target_fill_index + 180) % 359)
-
-    // Get indices used to select distractor fills
-    let distractor_fill_indices = [];
-
-    if (trial_data.DD_cond == 'HIGH') {
-      // self-similar distractors share single fill colour
-      let adjust = randomChoice([-40, 40])
-      distractor_fill_indices.push( ((ref_color + adjust) % 359))
-
-    }
-    else {
-      // otherwise can have one of four fills
-      distractor_fill_indices.push( ((ref_color + 20) % 359))
-      distractor_fill_indices.push( ((ref_color + -20) % 359))
-      distractor_fill_indices.push( ((ref_color + 40) % 359))
-      distractor_fill_indices.push( ((ref_color + -40) % 359))
-
+      fills.push(trial_data.target_fill)
     }
 
     // Randomly select & push distractor fills until stream complete
-    while (fills.length < trial_data.stream_length) {
-      let fill_index = randomChoice(distractor_fill_indices);
-      let fill_value = (fill_index > 0) ? const_lum[fill_index] : const_lum.endwards(fill_index)
-
-      fills.push(fill_value)
-
+    while (fills.length < trial_data.stream_length - 1) {
+      let fill = randomChoice(trial_data.distractor_fills);
+      fills.push(fill)
     }
 
     fills = array_shuffle(fills)
 
-    to_return = fills.reduce((r, a) => r.concat(a, 'white'), [1])
+    if (trial_data.target_present) {
+      let i = ranged_random(5,13)
+      fills.splice(i, 0, trial_data.target_fill)
+    }
+    else {
+      fills.push(randomChoice(trial_data.distractor_fills))
+    }
+
+
+    to_return = fills.reduce((r, a) => r.concat(a, 'white'), [1]).shift()
 
     return to_return
 
@@ -149,13 +153,14 @@ jsPsych.plugins["temporal-search"] = (function() {
     $('#jspsych-loading-progress-bar-container').remove()
 
     trial_data = {
+      practice_block: trial.practice,
       search_type: trial.search_type,
       stream_length: trial.stream_length,
-      target_fill_index: trial.target_fill_index,
       target_present: trial.target_present,
       TD_cond: trial.TD_cond,
       DD_cond: trial.DD_cond,
-      fix_dur: trial.fix_duration,
+      target_fill: trial.target_fill,
+      distractor_fills: trial.distractor_fills,
       mask_dur: trial.mask_duration,
       search_dur: trial.item_duration,
       ISI: trial.ISI_duration,
@@ -167,9 +172,14 @@ jsPsych.plugins["temporal-search"] = (function() {
     var stim_fills = plugin.get_fills()
 
     // Given it's easier to use search-item here, instead of fixation, is fixation really necessary to define?
+    var example = $('<div />').addClass('search-item').css('background-color', `${trial_data.target_fill}`)
+
+    $(example).text(`TARGET`)
+
+
     var search_item = $('<div />').addClass('search-item')
 
-    $(display_element).append(search_item)
+    $(display_element).append(example)
 
     var keyboardListener;
 
@@ -184,7 +194,7 @@ jsPsych.plugins["temporal-search"] = (function() {
 
     }, trial_data.fix_dur)
 
-    var trial_duration = trial_data.fix_dur + (trial_data.search_dur*16) + (trial_data.mask_dur*16) + trial.response_window;
+    var trial_duration = trial.preview_duration + trial.fix_duration + (trial_data.search_dur*16) + (trial_data.mask_dur*16) + trial.response_window;
 
     jsPsych.pluginAPI.setTimeout(function() {
       jsPsych.pluginAPI.cancelKeyboardResponse(keyboardListener) // Stop listening for responses
@@ -194,11 +204,19 @@ jsPsych.plugins["temporal-search"] = (function() {
     function timer(ms) {return new Promise(res => jsPsych.pluginAPI.setTimeout(res, ms))}
 
     async function do_trial () {
+      await timer(1000)
+      $(display_element).html('')
+      fixation()
+    }
+
+    async function fixation() {
+      $(display_element).append(search_item)
       await timer(trial_data.fix_dur)
       run_rsvp()
     }
 
     async function run_rsvp () {
+
       for (let i=0; i < stim_fills.length; i++) {
         let delay = (i % 2 === 0) ? trial_data.search_dur : trial_data.mask_dur
         await timer(delay)
@@ -254,8 +272,11 @@ jsPsych.plugins["temporal-search"] = (function() {
 
     // function to handle responses by the subject
     var after_response = function(info) {
+      // TODO: correct feedback not being provided.
+
       // only record the first response
       if (response.key == null) { response = info; }
+      pr(response.key)
       end_trial();
     };
 
